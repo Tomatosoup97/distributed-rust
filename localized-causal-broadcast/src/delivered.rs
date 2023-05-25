@@ -23,11 +23,11 @@ pub struct DeliveredSet {
 impl DeliveredSet {
     pub fn new(total_nodes: usize) -> Self {
         Self {
-            acked: HashMap::new(),
-            acked_counter: HashMap::new(),
-            received_up_to: HashMap::new(),
-            undelivered: HashMap::new(),
-            set: HashMap::new(),
+            acked: HashMap::with_capacity(total_nodes),
+            acked_counter: HashMap::with_capacity(total_nodes),
+            received_up_to: HashMap::with_capacity(total_nodes),
+            undelivered: HashMap::with_capacity(total_nodes),
+            set: HashMap::with_capacity(total_nodes),
             vector_clock: vec![0; total_nodes + 1],
         }
     }
@@ -73,7 +73,7 @@ impl AccessDeliveredSet {
         let acked = delivered
             .acked
             .entry(sender_id)
-            .or_insert(HashMap::new())
+            .or_insert(HashMap::with_capacity(self.total_nodes))
             .entry(payload.owner_id)
             .or_insert(HashSet::new());
 
@@ -142,9 +142,7 @@ impl AccessDeliveredSet {
                 PayloadKind::Fifob => {
                     deliverable.append(&mut self.fifob_deliver(delivered, &payload))
                 }
-                PayloadKind::Lcb => {
-                    deliverable.append(&mut self.lcb_deliver(delivered, &payload))
-                }
+                PayloadKind::Lcb => deliverable.append(&mut self.lcb_deliver(delivered, &payload)),
                 _ => self.deliver(delivered, &payload),
             }
         }
@@ -175,9 +173,7 @@ impl AccessDeliveredSet {
 
         delivered.vector_clock[payload.owner_id.0 as usize] += 1;
 
-        if let Some(affected_nodes) =
-            self.inverted_causality_map.get(&payload.owner_id.0)
-        {
+        if let Some(affected_nodes) = self.inverted_causality_map.get(&payload.owner_id.0) {
             for affected_node in affected_nodes.iter() {
                 let affected_owner_id = OwnerID(*affected_node);
                 let received_up_to = delivered
@@ -210,12 +206,7 @@ impl AccessDeliveredSet {
             .unwrap();
     }
 
-    pub fn contains(
-        &self,
-        sender_id: SenderID,
-        owner_id: OwnerID,
-        packet_uid: PacketID,
-    ) -> bool {
+    pub fn contains(&self, sender_id: SenderID, owner_id: OwnerID, packet_uid: PacketID) -> bool {
         let delivered = self.delivered.lock().unwrap();
         let acked = delivered
             .acked
@@ -239,11 +230,7 @@ impl AccessDeliveredSet {
         )
     }
 
-    fn can_deliver(
-        &self,
-        delivered: &MutexGuard<DeliveredSet>,
-        payload: &Payload,
-    ) -> bool {
+    fn can_deliver(&self, delivered: &MutexGuard<DeliveredSet>, payload: &Payload) -> bool {
         match payload.kind {
             PayloadKind::Tcp => true,
             PayloadKind::Beb => true,
@@ -254,11 +241,7 @@ impl AccessDeliveredSet {
         }
     }
 
-    fn can_urb_deliver(
-        &self,
-        delivered: &MutexGuard<DeliveredSet>,
-        payload: &Payload,
-    ) -> bool {
+    fn can_urb_deliver(&self, delivered: &MutexGuard<DeliveredSet>, payload: &Payload) -> bool {
         let acked_count = delivered
             .acked_counter
             .get(&payload.owner_id)
@@ -269,11 +252,7 @@ impl AccessDeliveredSet {
         }
     }
 
-    fn can_fifob_deliver(
-        &self,
-        delivered: &MutexGuard<DeliveredSet>,
-        payload: &Payload,
-    ) -> bool {
+    fn can_fifob_deliver(&self, delivered: &MutexGuard<DeliveredSet>, payload: &Payload) -> bool {
         let urb_happy = self.can_urb_deliver(delivered, payload);
 
         let received_up_to = delivered
@@ -285,11 +264,7 @@ impl AccessDeliveredSet {
         urb_happy && order_happy
     }
 
-    fn can_lcb_deliver(
-        &self,
-        delivered: &MutexGuard<DeliveredSet>,
-        payload: &Payload,
-    ) -> bool {
+    fn can_lcb_deliver(&self, delivered: &MutexGuard<DeliveredSet>, payload: &Payload) -> bool {
         let fifob_happy = self.can_fifob_deliver(delivered, payload);
 
         let dependencies = self.causality_map.get(&payload.owner_id.0);
@@ -364,11 +339,7 @@ pub fn keep_writing_delivered_messages(
                 if TASK_COMPATIBILITY {
                     writeln!(file, "d {} {}", owner_id.0, contents)?;
                 } else {
-                    writeln!(
-                        file,
-                        "delivered {:?} from {}: {}",
-                        kind, owner_id, contents
-                    )?;
+                    writeln!(file, "delivered {:?} from {}: {}", kind, owner_id, contents)?;
                 }
             }
         }
