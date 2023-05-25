@@ -1,5 +1,6 @@
 #![allow(dead_code, unused_variables)]
 use clap::{Parser, Subcommand};
+use kvs::Result;
 use std::process::exit;
 
 #[derive(Parser, Debug)]
@@ -16,7 +17,7 @@ enum Command {
     Rm { key: String },
 }
 
-fn main() {
+fn main() -> Result<()> {
     let cli = Cli::parse();
     println!("{:?}", cli);
 
