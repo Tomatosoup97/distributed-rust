@@ -1,8 +1,9 @@
 use crate::conf::DEBUG;
+use crate::network_error::Result as NetworkResult;
 use crate::tcp::{Message, TcpHandler};
 use crate::udp::Payload;
 
-pub fn best_effort_broadcast(tcp_handler: &TcpHandler, payload: &Payload) {
+pub fn best_effort_broadcast(tcp_handler: &TcpHandler, payload: &Payload) -> NetworkResult<()> {
     if DEBUG {
         println!("Broadcasting: {}", payload);
     }
@@ -14,23 +15,31 @@ pub fn best_effort_broadcast(tcp_handler: &TcpHandler, payload: &Payload) {
         tcp_handler.tx_sending_channel.send(message).unwrap();
     }
 
-    tcp_handler.delivered.mark_as_seen(payload);
+    tcp_handler.delivered.mark_as_seen(payload)
 }
 
-pub fn reliable_broadcast(tcp_handler: &TcpHandler, payload: &Payload) {
+pub fn reliable_broadcast(tcp_handler: &TcpHandler, payload: &Payload) -> NetworkResult<()> {
     if !tcp_handler.delivered.was_seen(payload) {
-        best_effort_broadcast(tcp_handler, payload);
+        best_effort_broadcast(tcp_handler, payload)
+    } else {
+        Ok(())
     }
 }
 
-pub fn uniform_reliable_broadcast(tcp_handler: &TcpHandler, payload: &Payload) {
-    reliable_broadcast(tcp_handler, payload);
+pub fn uniform_reliable_broadcast(
+    tcp_handler: &TcpHandler,
+    payload: &Payload,
+) -> NetworkResult<()> {
+    reliable_broadcast(tcp_handler, payload)
 }
 
-pub fn fifo_broadcast(tcp_handler: &TcpHandler, payload: &Payload) {
-    uniform_reliable_broadcast(tcp_handler, payload);
+pub fn fifo_broadcast(tcp_handler: &TcpHandler, payload: &Payload) -> NetworkResult<()> {
+    uniform_reliable_broadcast(tcp_handler, payload)
 }
 
-pub fn localized_causal_broadcast(tcp_handler: &TcpHandler, payload: &Payload) {
-    fifo_broadcast(tcp_handler, payload);
+pub fn localized_causal_broadcast(
+    tcp_handler: &TcpHandler,
+    payload: &Payload,
+) -> NetworkResult<()> {
+    fifo_broadcast(tcp_handler, payload)
 }

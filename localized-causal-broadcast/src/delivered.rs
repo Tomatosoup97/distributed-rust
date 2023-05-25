@@ -1,5 +1,6 @@
 use crate::conf::TASK_COMPATIBILITY;
 use crate::hosts::{Node, NodeID};
+use crate::network_error::Result as NetworkResult;
 use crate::udp::{OwnerID, PacketID, Payload, PayloadKind, SenderID, VectorClock};
 use std::collections::{HashMap, HashSet};
 use std::fs::OpenOptions;
@@ -67,7 +68,7 @@ impl AccessDeliveredSet {
         delivered.vector_clock.clone()
     }
 
-    pub fn insert(&self, sender_id: SenderID, payload: &Payload) {
+    pub fn insert(&self, sender_id: SenderID, payload: &Payload) -> NetworkResult<()> {
         let mut delivered = self.delivered.lock().unwrap();
 
         let acked = delivered
@@ -107,29 +108,30 @@ impl AccessDeliveredSet {
             self.try_delivering(
                 &mut delivered,
                 vec![(payload.kind, payload.owner_id, payload.packet_uid)],
-            );
+            )?;
         }
+        Ok(())
     }
 
     fn try_delivering(
         &self,
         delivered: &mut MutexGuard<DeliveredSet>,
         mut deliverable: Vec<Deliverable>,
-    ) {
+    ) -> NetworkResult<()> {
         while !deliverable.is_empty() {
-            let (kind, owner_id, packet_uid) = deliverable.pop().unwrap();
+            let (kind, owner_id, packet_uid) = deliverable.pop().expect("deliverable is empty");
             let payload = delivered
                 .undelivered
                 .get(&owner_id)
                 .and_then(|undelivered| undelivered.get(&packet_uid));
 
             if matches!(payload, None) {
-                return;
+                return Ok(());
             }
-            let payload = payload.unwrap().clone();
+            let payload = payload.expect("Checked for this condition before").clone();
 
             if !self.can_deliver(delivered, &payload) {
-                return;
+                return Ok(());
             }
 
             delivered
@@ -140,20 +142,21 @@ impl AccessDeliveredSet {
 
             match payload.kind {
                 PayloadKind::Fifob => {
-                    deliverable.append(&mut self.fifob_deliver(delivered, &payload))
+                    deliverable.append(&mut self.fifob_deliver(delivered, &payload)?)
                 }
-                PayloadKind::Lcb => deliverable.append(&mut self.lcb_deliver(delivered, &payload)),
-                _ => self.deliver(delivered, &payload),
+                PayloadKind::Lcb => deliverable.append(&mut self.lcb_deliver(delivered, &payload)?),
+                _ => self.deliver(delivered, &payload)?,
             }
         }
+        Ok(())
     }
 
     fn fifob_deliver(
         &self,
         delivered: &mut MutexGuard<DeliveredSet>,
         payload: &Payload,
-    ) -> Vec<Deliverable> {
-        self.deliver(delivered, payload);
+    ) -> NetworkResult<Vec<Deliverable>> {
+        self.deliver(delivered, payload)?;
 
         let next_packet_uid = PacketID(payload.packet_uid.0 + 1);
 
@@ -161,15 +164,15 @@ impl AccessDeliveredSet {
             .received_up_to
             .insert(payload.owner_id, next_packet_uid);
 
-        vec![(payload.kind, payload.owner_id, next_packet_uid)]
+        Ok(vec![(payload.kind, payload.owner_id, next_packet_uid)])
     }
 
     fn lcb_deliver(
         &self,
         delivered: &mut MutexGuard<DeliveredSet>,
         payload: &Payload,
-    ) -> Vec<Deliverable> {
-        let mut deliverable = self.fifob_deliver(delivered, payload);
+    ) -> NetworkResult<Vec<Deliverable>> {
+        let mut deliverable = self.fifob_deliver(delivered, payload)?;
 
         delivered.vector_clock[payload.owner_id.0 as usize] += 1;
 
@@ -185,11 +188,15 @@ impl AccessDeliveredSet {
                 deliverable.push((payload.kind, affected_owner_id, received_up_to));
             }
         }
-        deliverable
+        Ok(deliverable)
     }
 
-    fn deliver(&self, delivered: &mut MutexGuard<DeliveredSet>, payload: &Payload) {
-        let contents = String::from_utf8(payload.buffer.clone()).unwrap();
+    fn deliver(
+        &self,
+        delivered: &mut MutexGuard<DeliveredSet>,
+        payload: &Payload,
+    ) -> NetworkResult<()> {
+        let contents = String::from_utf8(payload.buffer.clone())?;
 
         delivered
             .set
@@ -197,13 +204,12 @@ impl AccessDeliveredSet {
             .or_insert(HashSet::new())
             .insert(payload.packet_uid);
 
-        self.tx_writing
-            .send(LogEvent::Delivery {
-                owner_id: payload.owner_id,
-                kind: payload.kind,
-                contents,
-            })
-            .unwrap();
+        self.tx_writing.send(LogEvent::Delivery {
+            owner_id: payload.owner_id,
+            kind: payload.kind,
+            contents,
+        })?;
+        Ok(())
     }
 
     pub fn contains(&self, sender_id: SenderID, owner_id: OwnerID, packet_uid: PacketID) -> bool {
@@ -218,7 +224,7 @@ impl AccessDeliveredSet {
         }
     }
 
-    pub fn mark_as_seen(&self, payload: &Payload) {
+    pub fn mark_as_seen(&self, payload: &Payload) -> NetworkResult<()> {
         self.insert(SenderID(self.current_node_id), payload)
     }
 
@@ -313,7 +319,7 @@ pub enum LogEvent {
 pub fn keep_writing_delivered_messages(
     path: &str,
     rx_writing: Receiver<LogEvent>,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> NetworkResult<()> {
     let path = Path::new(path);
 
     let mut file = OpenOptions::new().write(true).open(path)?;

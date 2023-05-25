@@ -1,4 +1,5 @@
 use crate::broadcast;
+use crate::config_error::ConfigError;
 use crate::config_parser::Config;
 use crate::delivered::LogEvent;
 use crate::tcp::{Message, TcpHandler};
@@ -10,7 +11,10 @@ pub fn enqueue_tcp_messages(
     tx_writing_channel: &mpsc::Sender<LogEvent>,
     config: &Config,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let destination = tcp_handler.nodes.get(&config.receiver_id).unwrap();
+    let destination = tcp_handler
+        .nodes
+        .get(&config.receiver_id)
+        .ok_or(ConfigError::UndefinedNodeID(config.receiver_id))?;
 
     if tcp_handler.current_node_id == config.receiver_id {
         // nothing to do
@@ -65,16 +69,12 @@ pub fn enqueue_broadcast_messages(
             contents,
         })?;
         match kind {
-            PayloadKind::Beb => broadcast::best_effort_broadcast(tcp_handler, &payload),
-            PayloadKind::Rb => broadcast::reliable_broadcast(tcp_handler, &payload),
-            PayloadKind::Urb => {
-                broadcast::uniform_reliable_broadcast(tcp_handler, &payload)
-            }
-            PayloadKind::Fifob => broadcast::fifo_broadcast(tcp_handler, &payload),
-            PayloadKind::Lcb => {
-                broadcast::localized_causal_broadcast(tcp_handler, &payload)
-            }
-            _ => panic!("Invalid payload kind to broadcast"),
+            PayloadKind::Beb => broadcast::best_effort_broadcast(tcp_handler, &payload)?,
+            PayloadKind::Rb => broadcast::reliable_broadcast(tcp_handler, &payload)?,
+            PayloadKind::Urb => broadcast::uniform_reliable_broadcast(tcp_handler, &payload)?,
+            PayloadKind::Fifob => broadcast::fifo_broadcast(tcp_handler, &payload)?,
+            PayloadKind::Lcb => broadcast::localized_causal_broadcast(tcp_handler, &payload)?,
+            PayloadKind::Tcp => panic!("TCP is not a broadcast protocol!"),
         }
     }
     Ok(())

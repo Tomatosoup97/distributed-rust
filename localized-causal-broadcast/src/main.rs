@@ -6,12 +6,24 @@ use std::thread;
 
 mod broadcast;
 mod conf;
+mod config_error;
 mod config_parser;
 mod delivered;
 mod enqueue;
 mod hosts;
+mod network_error;
 mod tcp;
 mod udp;
+
+fn handle_box_error(err: Box<dyn std::error::Error>) {
+    eprintln!("Error: {}", err);
+    std::process::exit(1);
+}
+
+fn handle_error(err: impl std::error::Error) {
+    eprintln!("Error: {}", err);
+    std::process::exit(1);
+}
 
 fn run() -> Result<(), Box<dyn std::error::Error>> {
     let program_args = config_parser::ProgramArgs::parse()?;
@@ -19,7 +31,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let nodes = hosts::read_hosts(&program_args.hosts)?;
     config_parser::create_output_file(&program_args.output)?;
 
-    let current_node = nodes.get(&program_args.id).unwrap();
+    let current_node = program_args.get_current_node(&nodes)?;
     let current_node_id = current_node.id;
 
     if DEBUG {
@@ -57,53 +69,43 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         delivered,
     };
 
-    let sender_socket = socket.try_clone().expect("couldn't clone the socket");
+    let sender_socket = socket.try_clone()?;
     let sender_tcp_handler = tcp_handler.clone();
 
     let sender_thread = thread::spawn(move || {
-        if let Err(e) = tcp::keep_sending_messages(
-            sender_tcp_handler,
-            rx_sending,
-            tx_retrans,
-            &sender_socket,
-        ) {
-            panic!("Error: {}", e)
+        if let Err(e) =
+            tcp::keep_sending_messages(sender_tcp_handler, rx_sending, tx_retrans, &sender_socket)
+        {
+            handle_error(e)
         }
     });
 
-    let receiver_socket = socket.try_clone().expect("couldn't clone the socket");
+    let receiver_socket = socket.try_clone()?;
 
     let receiver_tcp_handler = tcp_handler.clone();
     let receiver_thread = thread::spawn(move || {
-        if let Err(e) =
-            tcp::keep_receiving_messages(receiver_tcp_handler, &receiver_socket)
-        {
-            panic!("Error: {}", e)
+        if let Err(e) = tcp::keep_receiving_messages(receiver_tcp_handler, &receiver_socket) {
+            handle_error(e)
         }
     });
 
     let retransmitter_tcp_handler = tcp_handler.clone();
     let retransmission_thread = thread::spawn(move || {
-        if let Err(e) =
-            tcp::keep_retransmitting_messages(retransmitter_tcp_handler, rx_retrans)
-        {
-            panic!("Error: {}", e)
+        if let Err(e) = tcp::keep_retransmitting_messages(retransmitter_tcp_handler, rx_retrans) {
+            handle_error(e)
         }
     });
 
     let enqueuer_thread = thread::spawn(move || {
-        if let Err(e) =
-            enqueue::enqueue_messages(tcp_handler, tx_writing, messages_count)
-        {
-            panic!("Error: {}", e)
+        if let Err(e) = enqueue::enqueue_messages(tcp_handler, tx_writing, messages_count) {
+            handle_box_error(e)
         }
     });
 
     let writer_thread = thread::spawn(move || {
-        if let Err(e) =
-            delivered::keep_writing_delivered_messages(&program_args.output, rx_writing)
+        if let Err(e) = delivered::keep_writing_delivered_messages(&program_args.output, rx_writing)
         {
-            panic!("Error: {}", e)
+            handle_error(e)
         }
     });
 
@@ -118,6 +120,6 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 
 fn main() {
     if let Err(e) = run() {
-        println!("Error: {}", e);
+        handle_box_error(e);
     }
 }

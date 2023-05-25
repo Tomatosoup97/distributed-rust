@@ -2,6 +2,7 @@ use crate::broadcast;
 use crate::conf::{DEBUG_VERBOSE, RETRANSMISSION_OFFSET_MS};
 use crate::delivered::AccessDeliveredSet;
 use crate::hosts::{Node, Nodes};
+use crate::network_error::{NetworkError, Result as NetworkResult};
 use crate::udp::{Payload, PayloadKind, SenderID};
 use std::net::UdpSocket;
 use std::sync::mpsc;
@@ -57,7 +58,7 @@ pub fn keep_sending_messages(
     rx_sending_channel: mpsc::Receiver<Message>,
     tx_retrans_channel: mpsc::Sender<Message>,
     socket: &UdpSocket,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> NetworkResult<()> {
     for mut message in rx_sending_channel {
         if DEBUG_VERBOSE {
             println!("Sending to {}", message.destination);
@@ -73,10 +74,7 @@ pub fn keep_sending_messages(
     Ok(())
 }
 
-pub fn keep_receiving_messages(
-    tcp_handler: TcpHandler,
-    socket: &UdpSocket,
-) -> Result<(), Box<dyn std::error::Error>> {
+pub fn keep_receiving_messages(tcp_handler: TcpHandler, socket: &UdpSocket) -> NetworkResult<()> {
     loop {
         let payload = Payload::receive_udp(socket)?;
 
@@ -84,36 +82,31 @@ pub fn keep_receiving_messages(
             let mut acked_payload = payload.clone();
             acked_payload.is_ack = true;
 
-            let destination =
-                tcp_handler.nodes.get(&payload.sender_id.0).unwrap().clone();
+            let destination = tcp_handler
+                .nodes
+                .get(&payload.sender_id.0)
+                .ok_or(NetworkError::UndefinedNodeID(payload.sender_id.0))?
+                .clone();
             let message = Message::new(acked_payload, destination);
             tcp_handler.tx_sending_channel.send(message)?;
         }
-        tcp_handler.delivered.insert(payload.sender_id, &payload);
+        tcp_handler.delivered.insert(payload.sender_id, &payload)?;
 
         match payload.kind {
-            PayloadKind::Tcp => {}
-            PayloadKind::Beb => {}
-            PayloadKind::Rb => {
-                broadcast::reliable_broadcast(&tcp_handler, &payload);
-            }
-            PayloadKind::Urb => {
-                broadcast::uniform_reliable_broadcast(&tcp_handler, &payload);
-            }
-            PayloadKind::Fifob => {
-                broadcast::fifo_broadcast(&tcp_handler, &payload);
-            }
-            PayloadKind::Lcb => {
-                broadcast::localized_causal_broadcast(&tcp_handler, &payload);
-            }
-        }
+            PayloadKind::Tcp => Ok(()),
+            PayloadKind::Beb => Ok(()),
+            PayloadKind::Rb => broadcast::reliable_broadcast(&tcp_handler, &payload),
+            PayloadKind::Urb => broadcast::uniform_reliable_broadcast(&tcp_handler, &payload),
+            PayloadKind::Fifob => broadcast::fifo_broadcast(&tcp_handler, &payload),
+            PayloadKind::Lcb => broadcast::localized_causal_broadcast(&tcp_handler, &payload),
+        }?
     }
 }
 
 pub fn keep_retransmitting_messages(
     tcp_handler: TcpHandler,
     rx_retrans_channel: mpsc::Receiver<Message>,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> NetworkResult<()> {
     for message in rx_retrans_channel {
         while !message.ready_for_retransmission() {
             std::thread::sleep(Duration::from_millis(RETRANSMISSION_OFFSET_MS / 10));

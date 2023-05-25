@@ -1,9 +1,11 @@
-use crate::hosts::NodeID;
+use crate::config_error::{ConfigError, Result};
+use crate::hosts::{Node, NodeID, Nodes};
 use std::collections::HashMap;
 use std::env;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
+use std::result;
 
 #[derive(Debug)]
 pub struct ProgramArgs {
@@ -20,16 +22,22 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn read(path: &str) -> Result<Config, Box<dyn std::error::Error>> {
+    pub fn read(path: &str) -> Result<Config> {
         let path = Path::new(path);
         let file = File::open(path)?;
         let reader = BufReader::new(file);
 
-        let line = reader.lines().next().ok_or("Empty file")??;
+        let line = reader.lines().next().ok_or(ConfigError::EmptyFile)??;
         let mut values = line.split_whitespace();
 
-        let messages_count = values.next().ok_or("Invalid input")?.parse::<u32>()?;
-        let receiver_id = values.next().ok_or("Invalid input")?.parse::<u32>()?;
+        let messages_count = values
+            .next()
+            .ok_or(ConfigError::NoMessageCount)?
+            .parse::<u32>()?;
+        let receiver_id = values
+            .next()
+            .ok_or(ConfigError::NoReceiverID)?
+            .parse::<u32>()?;
 
         Ok(Config {
             messages_count,
@@ -46,7 +54,7 @@ pub struct ConfigLcb {
 }
 
 impl ConfigLcb {
-    pub fn read(path: &str) -> Result<ConfigLcb, Box<dyn std::error::Error>> {
+    pub fn read(path: &str) -> Result<ConfigLcb> {
         let file = File::open(Path::new(path))?;
         let reader = BufReader::new(file);
 
@@ -54,7 +62,7 @@ impl ConfigLcb {
 
         let messages_count = lines
             .next()
-            .ok_or("Invalid config file format")??
+            .ok_or(ConfigError::NoMessageCount)??
             .parse::<u32>()?;
 
         let mut causality_map = HashMap::new();
@@ -65,7 +73,7 @@ impl ConfigLcb {
             let dependencies: Vec<u32> = line
                 .split_whitespace()
                 .map(|id| id.parse::<u32>())
-                .collect::<Result<Vec<u32>, _>>()?;
+                .collect::<result::Result<Vec<u32>, _>>()?;
 
             for dependency in dependencies.iter() {
                 inverted_causality_map
@@ -85,11 +93,11 @@ impl ConfigLcb {
 }
 
 impl ProgramArgs {
-    pub fn parse() -> Result<ProgramArgs, String> {
+    pub fn parse() -> Result<ProgramArgs> {
         let args: Vec<String> = env::args().collect();
 
         if args.len() != 9 {
-            return Err("Wrong number of arguments".to_string());
+            return Err(ConfigError::WrongArgsNumber);
         }
         let mut program_args = ProgramArgs {
             id: 0,
@@ -101,7 +109,7 @@ impl ProgramArgs {
         for i in 1..args.len() {
             match args[i].as_str() {
                 "--id" => {
-                    program_args.id = args[i + 1].parse::<u32>().unwrap();
+                    program_args.id = args[i + 1].parse::<u32>()?;
                 }
                 "--hosts" => {
                     program_args.hosts = args[i + 1].clone();
@@ -117,9 +125,15 @@ impl ProgramArgs {
         }
         Ok(program_args)
     }
+
+    pub fn get_current_node<'a>(&self, nodes: &'a Nodes) -> Result<&'a Node> {
+        nodes
+            .get(&self.id)
+            .ok_or(ConfigError::UndefinedNodeID(self.id))
+    }
 }
 
-pub fn create_output_file(path: &str) -> Result<(), Box<dyn std::error::Error>> {
+pub fn create_output_file(path: &str) -> Result<()> {
     let path = Path::new(path);
     File::create(path)?;
     Ok(())

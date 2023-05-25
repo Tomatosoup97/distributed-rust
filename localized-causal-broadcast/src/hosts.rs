@@ -1,3 +1,4 @@
+use crate::config_error::{ConfigError, Result};
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
@@ -24,7 +25,7 @@ impl Display for Node {
     }
 }
 
-pub fn read_hosts(path: &str) -> Result<Nodes, Box<dyn std::error::Error>> {
+pub fn read_hosts(path: &str) -> Result<Nodes> {
     let path = Path::new(path);
     let file = File::open(path)?;
     let reader = BufReader::new(file);
@@ -35,9 +36,18 @@ pub fn read_hosts(path: &str) -> Result<Nodes, Box<dyn std::error::Error>> {
         let line = line?;
         let mut values = line.split_whitespace();
 
-        let id = values.next().ok_or("Invalid input")?.parse::<u32>()?;
-        let ip = values.next().ok_or("Invalid input")?.to_string();
-        let port = values.next().ok_or("Invalid input")?.parse::<u32>()?;
+        let id = values
+            .next()
+            .ok_or(ConfigError::InvalidHostsFile)?
+            .parse::<u32>()?;
+        let ip = values
+            .next()
+            .ok_or(ConfigError::InvalidHostsFile)?
+            .to_string();
+        let port = values
+            .next()
+            .ok_or(ConfigError::InvalidHostsFile)?
+            .parse::<u32>()?;
 
         nodes.insert(id, Node { id, ip, port });
     }

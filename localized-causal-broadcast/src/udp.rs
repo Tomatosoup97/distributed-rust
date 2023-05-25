@@ -1,5 +1,6 @@
 use crate::conf::DEBUG_VERBOSE;
 use crate::hosts::Node;
+use crate::network_error::Result as NetworkResult;
 use bincode::serialize;
 use serde::{Deserialize, Serialize};
 use std::fmt::{self, Display, Formatter};
@@ -59,10 +60,10 @@ pub struct Payload {
 
 impl Display for Payload {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        let message = String::from_utf8(self.buffer.clone()).unwrap();
+        let message = String::from_utf8(self.buffer.clone()).map_err(|err| fmt::Error)?;
         write!(
             f,
-            "Payload {{ is_ack: {:?}, kind: {:?}, owner_id: {}, sender_id: {}, packet_uid: {}, vector_clock: {:?}, buffer: {:?} }}",
+            "Payload {{ is_ack: {:?}, kind: {:?}, owner_id: {}, sender_id: {}, packet_uid: {}, vector_clock: {:?}, buffer: {} }}",
             self.is_ack,
             self.kind,
             self.owner_id,
@@ -75,11 +76,7 @@ impl Display for Payload {
 }
 
 impl Payload {
-    pub fn send_udp(
-        &self,
-        socket: &UdpSocket,
-        node: &Node,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn send_udp(&self, socket: &UdpSocket, node: &Node) -> NetworkResult<()> {
         if DEBUG_VERBOSE {
             println!("Sending {}", self);
         }
@@ -90,9 +87,7 @@ impl Payload {
         Ok(())
     }
 
-    pub fn receive_udp(
-        socket: &UdpSocket,
-    ) -> Result<Payload, Box<dyn std::error::Error>> {
+    pub fn receive_udp(socket: &UdpSocket) -> NetworkResult<Payload> {
         let mut buf = [0; MAX_UDP_PAYLOAD_SIZE];
         let (size, _) = socket.recv_from(&mut buf)?;
         let payload: Payload = bincode::deserialize(&buf[..size])?;
@@ -105,10 +100,7 @@ impl Payload {
     }
 }
 
-pub fn bind_socket(
-    ip: &str,
-    port: u32,
-) -> Result<UdpSocket, Box<dyn std::error::Error>> {
+pub fn bind_socket(ip: &str, port: u32) -> NetworkResult<UdpSocket> {
     let socket = UdpSocket::bind(format!("{}:{}", ip, port))?;
     Ok(socket)
 }
