@@ -8,3 +8,4 @@ pub use kv::KvStore;
 
 mod error;
 mod kv;
+mod log;

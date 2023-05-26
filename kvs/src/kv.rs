@@ -1,39 +1,53 @@
-use crate::error::Result;
-use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
+use crate::error::{ErrorKind, Result};
+use crate::log::LogEntry;
+use serde_json::Deserializer;
 use std::collections::HashMap;
+use std::fs::OpenOptions;
+use std::fs::{self, File};
+use std::io::prelude::*;
+use std::io::{BufReader, BufWriter, Seek, SeekFrom};
 use std::path::PathBuf;
 
 /// A key-value store.
 #[derive(Debug)]
 pub struct KvStore {
+    writer: BufWriter<File>,
+    reader: BufReader<File>,
+    data: Vec<LogEntry>,
     map: HashMap<String, String>,
 }
 
-impl Default for KvStore {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl KvStore {
-    /// Create a new KvStore.
-    pub fn new() -> KvStore {
-        KvStore {
+    /// Open the KvStore at a given path. Return the KvStore.
+    pub fn open(path: impl Into<PathBuf>) -> Result<KvStore> {
+        let path = path.into();
+        fs::create_dir_all(&path)?;
+        let log_path = path.join("data.log");
+
+        let writer_file = OpenOptions::new()
+            .write(true)
+            .append(true)
+            .create(true)
+            .open(&log_path)?;
+        let reader_file = OpenOptions::new().read(true).open(&log_path)?;
+
+        let mut store = KvStore {
+            writer: BufWriter::new(writer_file),
+            reader: BufReader::new(reader_file),
+            data: Vec::new(),
             map: HashMap::new(),
-        }
+        };
+        store.read_all()?;
+        // println!("store: {:?}", store.map);
+        Ok(store)
     }
 
     /// Set the value of a string key to a string. Return an error if the value is not
     /// written successfully.
     pub fn set(&mut self, key: String, value: String) -> Result<()> {
-        let log_entry = LogEntry::add(key, value);
-        let serialized_log: bson::Document = bson::to_bson(&log_entry)?;
-
-        let mut v: Vec<u8> = Vec::new();
-
-        println!("{:?}", log_entry);
-        println!("{:?}", serialized_log);
+        let log_entry = LogEntry::add(key.clone(), value.clone());
+        self.write(log_entry)?;
+        self.map.insert(key, value);
         Ok(())
     }
 
@@ -46,49 +60,33 @@ impl KvStore {
     /// Remove a given key. Return an error if the key does not exist or is not removed
     /// successfully.
     pub fn remove(&mut self, key: String) -> Result<()> {
-        self.map.remove(&key);
+        let log_entry = LogEntry::remove(key.clone());
+        self.write(log_entry)?;
+        self.map
+            .remove(&key)
+            .ok_or(ErrorKind::KeyNotFound)
+            .map(|_| ())
+    }
+
+    fn write(&mut self, log_entry: LogEntry) -> Result<()> {
+        serde_json::to_writer(&mut self.writer, &log_entry)?;
+        self.writer.flush()?;
         Ok(())
     }
 
-    /// Open the KvStore at a given path. Return the KvStore.
-    pub fn open(path: impl Into<PathBuf>) -> Result<KvStore> {
-        todo!()
-    }
-}
+    fn read_all(&mut self) -> Result<()> {
+        // To make sure we read from the beginning of the file
+        let pos = self.reader.seek(SeekFrom::Start(0))?;
+        let stream = Deserializer::from_reader(&mut self.reader).into_iter::<LogEntry>();
 
-const TOMBSTONE: &str = "__tombstone__";
-const TOMBSTONE_SIZE: u64 = TOMBSTONE.len() as u64;
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct LogEntry {
-    #[serde(with = "bson::serde_helpers::chrono_datetime_as_bson_datetime")]
-    timestamp: DateTime<Utc>,
-    key_size: u64,
-    value_size: u64,
-    key: String,
-    value: String,
-}
-
-impl LogEntry {
-    fn add(key: String, value: String) -> Self {
-        assert!(value != TOMBSTONE);
-
-        Self {
-            timestamp: Utc::now(),
-            key_size: key.len() as u64,
-            value_size: value.len() as u64,
-            key,
-            value,
+        for log_entry in stream {
+            let log_entry = log_entry?;
+            if log_entry.is_tombstone() {
+                self.map.remove(&log_entry.key);
+            } else {
+                self.map.insert(log_entry.key, log_entry.value);
+            }
         }
-    }
-
-    fn remove(key: String) -> Self {
-        Self {
-            timestamp: Utc::now(),
-            key_size: key.len() as u64,
-            value_size: TOMBSTONE_SIZE,
-            key,
-            value: TOMBSTONE.to_string(),
-        }
+        Ok(())
     }
 }
