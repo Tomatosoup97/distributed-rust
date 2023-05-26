@@ -8,13 +8,15 @@ use std::io::prelude::*;
 use std::io::{BufReader, BufWriter, Seek, SeekFrom};
 use std::path::PathBuf;
 
+type Position = u64;
+type Key = String;
+
 /// A key-value store.
 #[derive(Debug)]
 pub struct KvStore {
     writer: BufWriter<File>,
     reader: BufReader<File>,
-    data: Vec<LogEntry>,
-    map: HashMap<String, String>,
+    index: HashMap<String, Position>,
 }
 
 impl KvStore {
@@ -34,8 +36,7 @@ impl KvStore {
         let mut store = KvStore {
             writer: BufWriter::new(writer_file),
             reader: BufReader::new(reader_file),
-            data: Vec::new(),
-            map: HashMap::new(),
+            index: HashMap::new(),
         };
         store.read_all()?;
         // println!("store: {:?}", store.map);
@@ -44,7 +45,7 @@ impl KvStore {
 
     /// Set the value of a string key to a string. Return an error if the value is not
     /// written successfully.
-    pub fn set(&mut self, key: String, value: String) -> Result<()> {
+    pub fn set(&mut self, key: Key, value: String) -> Result<()> {
         let log_entry = LogEntry::add(key.clone(), value.clone());
         self.write(log_entry)?;
         self.map.insert(key, value);
@@ -53,16 +54,16 @@ impl KvStore {
 
     /// Get the string value of a string key. If the key does not exist, return None.
     /// Return an error if the value is not read successfully.
-    pub fn get(&mut self, key: String) -> Result<Option<String>> {
+    pub fn get(&mut self, key: Key) -> Result<Option<String>> {
         Ok(self.map.get(&key).cloned())
     }
 
     /// Remove a given key. Return an error if the key does not exist or is not removed
     /// successfully.
-    pub fn remove(&mut self, key: String) -> Result<()> {
+    pub fn remove(&mut self, key: Key) -> Result<()> {
         let log_entry = LogEntry::remove(key.clone());
         self.write(log_entry)?;
-        self.map
+        self.index
             .remove(&key)
             .ok_or(ErrorKind::KeyNotFound)
             .map(|_| ())
@@ -76,17 +77,25 @@ impl KvStore {
 
     fn read_all(&mut self) -> Result<()> {
         // To make sure we read from the beginning of the file
-        let pos = self.reader.seek(SeekFrom::Start(0))?;
-        let stream = Deserializer::from_reader(&mut self.reader).into_iter::<LogEntry>();
+        let mut current_pos = self.reader.seek(SeekFrom::Start(0))?;
+        let mut stream = Deserializer::from_reader(&mut self.reader).into_iter::<LogEntry>();
 
-        for log_entry in stream {
+        while let Some(log_entry) = stream.next() {
+            let next_pos = stream.byte_offset() as u64;
+
             let log_entry = log_entry?;
             if log_entry.is_tombstone() {
-                self.map.remove(&log_entry.key);
+                self.index.remove(&log_entry.key);
             } else {
-                self.map.insert(log_entry.key, log_entry.value);
+                self.index.insert(log_entry.key, current_pos);
             }
+            current_pos = next_pos;
         }
         Ok(())
     }
+}
+
+struct BufWriterWithPos<W: Write + Seek> {
+    writer: BufWriter<W>,
+    pos: u64,
 }
