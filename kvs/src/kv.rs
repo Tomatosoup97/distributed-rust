@@ -1,4 +1,6 @@
 use crate::error::Result;
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -25,7 +27,13 @@ impl KvStore {
     /// Set the value of a string key to a string. Return an error if the value is not
     /// written successfully.
     pub fn set(&mut self, key: String, value: String) -> Result<()> {
-        self.map.insert(key, value);
+        let log_entry = LogEntry::add(key, value);
+        let serialized_log: bson::Document = bson::to_bson(&log_entry)?;
+
+        let mut v: Vec<u8> = Vec::new();
+
+        println!("{:?}", log_entry);
+        println!("{:?}", serialized_log);
         Ok(())
     }
 
@@ -45,5 +53,42 @@ impl KvStore {
     /// Open the KvStore at a given path. Return the KvStore.
     pub fn open(path: impl Into<PathBuf>) -> Result<KvStore> {
         todo!()
+    }
+}
+
+const TOMBSTONE: &str = "__tombstone__";
+const TOMBSTONE_SIZE: u64 = TOMBSTONE.len() as u64;
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct LogEntry {
+    #[serde(with = "bson::serde_helpers::chrono_datetime_as_bson_datetime")]
+    timestamp: DateTime<Utc>,
+    key_size: u64,
+    value_size: u64,
+    key: String,
+    value: String,
+}
+
+impl LogEntry {
+    fn add(key: String, value: String) -> Self {
+        assert!(value != TOMBSTONE);
+
+        Self {
+            timestamp: Utc::now(),
+            key_size: key.len() as u64,
+            value_size: value.len() as u64,
+            key,
+            value,
+        }
+    }
+
+    fn remove(key: String) -> Self {
+        Self {
+            timestamp: Utc::now(),
+            key_size: key.len() as u64,
+            value_size: TOMBSTONE_SIZE,
+            key,
+            value: TOMBSTONE.to_string(),
+        }
     }
 }

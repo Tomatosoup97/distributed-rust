@@ -21,13 +21,15 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
     println!("{:?}", cli);
 
+    let mut kv_store = kvs::KvStore::new();
+
     match cli.command {
         Command::Get { key } => {
             eprintln!("unimplemented");
             exit(1);
         }
         Command::Set { key, value } => {
-            eprintln!("unimplemented");
+            kv_store.set(key, value)?;
             exit(1);
         }
         Command::Rm { key } => {
