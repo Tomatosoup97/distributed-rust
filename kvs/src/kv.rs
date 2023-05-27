@@ -5,8 +5,11 @@ use std::collections::HashMap;
 use std::fs::OpenOptions;
 use std::fs::{self, File};
 use std::io::prelude::*;
-use std::io::{BufReader, BufWriter, Seek, SeekFrom};
+use std::io::{self, BufReader, BufWriter, Seek, SeekFrom};
 use std::path::PathBuf;
+
+const COMPACTNESS_THRESHOLD: u64 = 1024;
+const DEBUG: bool = false;
 
 type Position = u64;
 
@@ -23,6 +26,8 @@ pub struct KvStore {
     writer: BufWriterWithPos<File>,
     reader: BufReader<File>,
     index: HashMap<String, Location>,
+    to_compact: u64,
+    dir: PathBuf,
 }
 
 impl KvStore {
@@ -43,9 +48,19 @@ impl KvStore {
             writer: BufWriterWithPos::new(writer_file)?,
             reader: BufReader::new(reader_file),
             index: HashMap::new(),
+            dir: path,
+            to_compact: 0,
         };
         let position = store.read_all()?;
         store.writer.update_position(position)?;
+
+        if DEBUG {
+            println!("store: {:?}", store);
+        }
+
+        if store.to_compact > COMPACTNESS_THRESHOLD {
+            store.compact()?;
+        }
         Ok(store)
     }
 
@@ -54,15 +69,25 @@ impl KvStore {
     pub fn set(&mut self, key: Key, value: String) -> Result<()> {
         let log_entry = LogEntry::add(key.clone(), value);
         let writing_start_position = self.writer.position;
-        self.write_log(log_entry)?;
+        serde_json::to_writer(&mut self.writer, &log_entry)?;
+        self.writer.flush()?;
         let writing_end_position = self.writer.position;
-        self.index.insert(
-            key,
-            Location {
-                position: writing_start_position,
-                length: writing_end_position - writing_start_position,
-            },
-        );
+        if self
+            .index
+            .insert(
+                key,
+                Location {
+                    position: writing_start_position,
+                    length: writing_end_position - writing_start_position,
+                },
+            )
+            .is_some()
+        {
+            self.to_compact += 1;
+        }
+        if self.to_compact > COMPACTNESS_THRESHOLD {
+            self.compact()?;
+        }
         Ok(())
     }
 
@@ -84,16 +109,17 @@ impl KvStore {
     /// successfully.
     pub fn remove(&mut self, key: Key) -> Result<()> {
         let log_entry = LogEntry::remove(key.clone());
-        self.write_log(log_entry)?;
+        serde_json::to_writer(&mut self.writer, &log_entry)?;
+        self.writer.flush()?;
+        self.to_compact += 1;
         self.index
             .remove(&key)
             .ok_or(ErrorKind::KeyNotFound)
-            .map(|_| ())
-    }
+            .map(|_| ())?;
 
-    fn write_log(&mut self, log_entry: LogEntry) -> Result<()> {
-        serde_json::to_writer(&mut self.writer, &log_entry)?;
-        self.writer.flush()?;
+        if self.to_compact > COMPACTNESS_THRESHOLD {
+            self.compact()?;
+        }
         Ok(())
     }
 
@@ -108,18 +134,63 @@ impl KvStore {
             let log_entry = log_entry?;
             if log_entry.is_tombstone() {
                 self.index.remove(&log_entry.key);
-            } else {
-                self.index.insert(
+                self.to_compact += 1;
+            } else if self
+                .index
+                .insert(
                     log_entry.key,
                     Location {
                         position: current_pos,
                         length: next_pos - current_pos,
                     },
-                );
+                )
+                .is_some()
+            {
+                self.to_compact += 1;
             }
             current_pos = next_pos;
         }
         Ok(current_pos)
+    }
+
+    fn compact(&mut self) -> Result<()> {
+        /* Compaction algorithm. The current strategy is to create a new file and copy
+         * over all the entries in the index to the new file. Then, we replace the old file
+         * with the new file and update the index.
+         */
+        if DEBUG {
+            println!("Compacting...");
+        }
+        let compacted_log_path = self.dir.join("data--compacted.log");
+        let original_log_path = self.dir.join("data.log");
+        let writer_file = OpenOptions::new()
+            .write(true)
+            .append(true)
+            .create(true)
+            .open(&compacted_log_path)?;
+        let mut compaction_writer = BufWriterWithPos::new(writer_file)?;
+
+        let mut new_position = 0;
+
+        for (key, location) in self.index.iter_mut() {
+            self.reader.seek(SeekFrom::Start(location.position))?;
+            let mut length_bound_reader = self.reader.get_mut().take(location.length);
+            io::copy(&mut length_bound_reader, &mut compaction_writer)?;
+
+            *location = Location {
+                position: new_position,
+                length: location.length,
+            };
+            new_position += location.length;
+        }
+
+        fs::rename(&compacted_log_path, &original_log_path)?;
+        self.writer = compaction_writer;
+        self.to_compact = 0;
+        self.reader = BufReader::new(OpenOptions::new().read(true).open(&original_log_path)?);
+        self.writer.update_position(new_position)?;
+
+        Ok(())
     }
 }
 

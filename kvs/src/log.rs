@@ -13,9 +13,6 @@ fn get_sys_time_in_secs() -> u64 {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct LogEntry {
-    timestamp: u64,
-    key_size: u64,
-    value_size: u64,
     pub key: String,
     pub value: String,
 }
@@ -24,20 +21,11 @@ impl LogEntry {
     pub fn add(key: String, value: String) -> Self {
         assert!(value != TOMBSTONE);
 
-        Self {
-            timestamp: get_sys_time_in_secs(),
-            key_size: key.len() as u64,
-            value_size: value.len() as u64,
-            key,
-            value,
-        }
+        Self { key, value }
     }
 
     pub fn remove(key: String) -> Self {
         Self {
-            timestamp: get_sys_time_in_secs(),
-            key_size: key.len() as u64,
-            value_size: TOMBSTONE_SIZE,
             key,
             value: TOMBSTONE.to_string(),
         }
