@@ -3,9 +3,9 @@
 
 //! A simple key/value store library.
 
+pub use engines::{KvStore, KvsEngine};
 pub use error::{ErrorKind, Result};
-pub use kv::KvStore;
 
+mod engines;
 mod error;
-mod kv;
 mod log;

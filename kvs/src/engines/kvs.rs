@@ -1,3 +1,4 @@
+use super::KvsEngine;
 use crate::error::{ErrorKind, Result};
 use crate::log::LogEntry;
 use serde_json::Deserializer;
@@ -30,6 +31,67 @@ pub struct KvStore {
     dir: PathBuf,
 }
 
+impl KvsEngine for KvStore {
+    /// Set the value of a string key to a string. Return an error if the value is not
+    /// written successfully.
+    fn set(&mut self, key: Key, value: String) -> Result<()> {
+        let log_entry = LogEntry::add(key.clone(), value);
+        let writing_start_position = self.writer.position;
+        serde_json::to_writer(&mut self.writer, &log_entry)?;
+        self.writer.flush()?;
+        let writing_end_position = self.writer.position;
+        if self
+            .index
+            .insert(
+                key,
+                Location {
+                    position: writing_start_position,
+                    length: writing_end_position - writing_start_position,
+                },
+            )
+            .is_some()
+        {
+            self.to_compact += 1;
+        }
+        if self.to_compact > COMPACTNESS_THRESHOLD {
+            self.compact()?;
+        }
+        Ok(())
+    }
+
+    /// Get the string value of a string key. If the key does not exist, return None.
+    /// Return an error if the value is not read successfully.
+    fn get(&mut self, key: Key) -> Result<Option<String>> {
+        match self.index.get(&key) {
+            Some(&Location { position, length }) => {
+                self.reader.seek(SeekFrom::Start(position))?;
+                let length_bound_reader = self.reader.get_mut().take(length);
+                let log_entry: LogEntry = serde_json::from_reader(length_bound_reader)?;
+                Ok(Some(log_entry.value))
+            }
+            None => Ok(None),
+        }
+    }
+
+    /// Remove a given key. Return an error if the key does not exist or is not removed
+    /// successfully.
+    fn remove(&mut self, key: Key) -> Result<()> {
+        let log_entry = LogEntry::remove(key.clone());
+        serde_json::to_writer(&mut self.writer, &log_entry)?;
+        self.writer.flush()?;
+        self.to_compact += 1;
+        self.index
+            .remove(&key)
+            .ok_or(ErrorKind::KeyNotFound)
+            .map(|_| ())?;
+
+        if self.to_compact > COMPACTNESS_THRESHOLD {
+            self.compact()?;
+        }
+        Ok(())
+    }
+}
+
 impl KvStore {
     /// Open the KvStore at a given path. Return the KvStore.
     pub fn open(path: impl Into<PathBuf>) -> Result<KvStore> {
@@ -58,65 +120,6 @@ impl KvStore {
             store.compact()?;
         }
         Ok(store)
-    }
-
-    /// Set the value of a string key to a string. Return an error if the value is not
-    /// written successfully.
-    pub fn set(&mut self, key: Key, value: String) -> Result<()> {
-        let log_entry = LogEntry::add(key.clone(), value);
-        let writing_start_position = self.writer.position;
-        serde_json::to_writer(&mut self.writer, &log_entry)?;
-        self.writer.flush()?;
-        let writing_end_position = self.writer.position;
-        if self
-            .index
-            .insert(
-                key,
-                Location {
-                    position: writing_start_position,
-                    length: writing_end_position - writing_start_position,
-                },
-            )
-            .is_some()
-        {
-            self.to_compact += 1;
-        }
-        if self.to_compact > COMPACTNESS_THRESHOLD {
-            self.compact()?;
-        }
-        Ok(())
-    }
-
-    /// Get the string value of a string key. If the key does not exist, return None.
-    /// Return an error if the value is not read successfully.
-    pub fn get(&mut self, key: Key) -> Result<Option<String>> {
-        match self.index.get(&key) {
-            Some(&Location { position, length }) => {
-                self.reader.seek(SeekFrom::Start(position))?;
-                let length_bound_reader = self.reader.get_mut().take(length);
-                let log_entry: LogEntry = serde_json::from_reader(length_bound_reader)?;
-                Ok(Some(log_entry.value))
-            }
-            None => Ok(None),
-        }
-    }
-
-    /// Remove a given key. Return an error if the key does not exist or is not removed
-    /// successfully.
-    pub fn remove(&mut self, key: Key) -> Result<()> {
-        let log_entry = LogEntry::remove(key.clone());
-        serde_json::to_writer(&mut self.writer, &log_entry)?;
-        self.writer.flush()?;
-        self.to_compact += 1;
-        self.index
-            .remove(&key)
-            .ok_or(ErrorKind::KeyNotFound)
-            .map(|_| ())?;
-
-        if self.to_compact > COMPACTNESS_THRESHOLD {
-            self.compact()?;
-        }
-        Ok(())
     }
 
     fn read_all(&mut self) -> Result<Position> {
