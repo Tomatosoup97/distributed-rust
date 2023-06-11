@@ -1,6 +1,7 @@
 use crate::error::{ErrorKind, Result};
 use crate::log::LogEntry;
 use serde_json::Deserializer;
+use slog_scope::info;
 use std::collections::HashMap;
 use std::fs::OpenOptions;
 use std::fs::{self, File};
@@ -9,7 +10,6 @@ use std::io::{self, BufReader, BufWriter, Seek, SeekFrom};
 use std::path::PathBuf;
 
 const COMPACTNESS_THRESHOLD: u64 = 1024;
-const DEBUG: bool = false;
 
 type Position = u64;
 
@@ -53,10 +53,6 @@ impl KvStore {
         };
         let position = store.read_all()?;
         store.writer.update_position(position)?;
-
-        if DEBUG {
-            println!("store: {:?}", store);
-        }
 
         if store.to_compact > COMPACTNESS_THRESHOLD {
             store.compact()?;
@@ -158,9 +154,7 @@ impl KvStore {
          * over all the entries in the index to the new file. Then, we replace the old file
          * with the new file and update the index.
          */
-        if DEBUG {
-            println!("Compacting...");
-        }
+        info!("Compacting...");
         let compacted_log_path = self.dir.join("data--compacted.log");
         let original_log_path = self.dir.join("data.log");
         let writer_file = OpenOptions::new()
