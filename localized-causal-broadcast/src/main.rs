@@ -1,6 +1,12 @@
 #![allow(dead_code, unused_variables)]
 
-use conf::DEBUG;
+#[macro_use(slog_o)]
+extern crate slog;
+#[macro_use]
+extern crate slog_scope;
+extern crate slog_term;
+
+use slog::Drain;
 use std::sync::mpsc;
 use std::thread;
 
@@ -34,13 +40,11 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let current_node = program_args.get_current_node(&nodes)?;
     let current_node_id = current_node.id;
 
-    if DEBUG {
-        println!("------------------");
-        println!("Program args: {:?}", program_args);
-        println!("Config: {:?}", config);
-        println!("Nodes: {:?}", nodes);
-        println!("------------------");
-    }
+    info!("------------------");
+    info!("Program args: {:?}", program_args);
+    info!("Config: {:?}", config);
+    info!("Nodes: {:?}", nodes);
+    info!("------------------");
 
     let messages_count = config.messages_count;
     let causality_map = config.causality_map;
@@ -119,7 +123,13 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn main() {
-    if let Err(e) = run() {
-        handle_box_error(e);
-    }
+    let plain = slog_term::PlainSyncDecorator::new(std::io::stdout());
+    let log = slog::Logger::root(slog_term::FullFormat::new(plain).build().fuse(), slog_o!());
+
+    let _guard = slog_scope::set_global_logger(log);
+    slog_scope::scope(&slog_scope::logger().new(slog_o!("scope" => "1")), || {
+        if let Err(e) = run() {
+            handle_box_error(e);
+        }
+    });
 }

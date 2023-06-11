@@ -1,12 +1,9 @@
-use crate::conf::DEBUG;
 use crate::network_error::Result as NetworkResult;
 use crate::tcp::{Message, TcpHandler};
 use crate::udp::Payload;
 
 pub fn best_effort_broadcast(tcp_handler: &TcpHandler, payload: &Payload) -> NetworkResult<()> {
-    if DEBUG {
-        println!("Broadcasting: {}", payload);
-    }
+    debug!("Broadcasting: {}", payload);
     for node in tcp_handler.nodes.values() {
         if node.id == tcp_handler.current_node_id {
             continue;

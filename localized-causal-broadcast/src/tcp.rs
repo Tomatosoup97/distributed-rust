@@ -1,5 +1,5 @@
 use crate::broadcast;
-use crate::conf::{DEBUG_VERBOSE, RETRANSMISSION_OFFSET_MS};
+use crate::conf::RETRANSMISSION_OFFSET_MS;
 use crate::delivered::AccessDeliveredSet;
 use crate::hosts::{Node, Nodes};
 use crate::network_error::{NetworkError, Result as NetworkResult};
@@ -60,9 +60,7 @@ pub fn keep_sending_messages(
     socket: &UdpSocket,
 ) -> NetworkResult<()> {
     for mut message in rx_sending_channel {
-        if DEBUG_VERBOSE {
-            println!("Sending to {}", message.destination);
-        }
+        trace!("Sending to {}", message.destination);
         message.payload.sender_id = SenderID(tcp_handler.current_node_id);
         message.payload.send_udp(socket, &message.destination)?;
         message.sending_time = Instant::now();
@@ -117,9 +115,7 @@ pub fn keep_retransmitting_messages(
             message.payload.owner_id,
             message.payload.packet_uid,
         ) {
-            if DEBUG_VERBOSE {
-                println!("Retransmitting {}", message);
-            }
+            trace!("Retransmitting {}", message);
             tcp_handler.tx_sending_channel.send(message)?;
         }
     }

@@ -1,4 +1,3 @@
-use crate::conf::DEBUG_VERBOSE;
 use crate::hosts::Node;
 use crate::network_error::Result as NetworkResult;
 use bincode::serialize;
@@ -77,9 +76,7 @@ impl Display for Payload {
 
 impl Payload {
     pub fn send_udp(&self, socket: &UdpSocket, node: &Node) -> NetworkResult<()> {
-        if DEBUG_VERBOSE {
-            println!("Sending {}", self);
-        }
+        trace!("Sending {}", self);
         let destination = format!("{}:{}", node.ip, node.port);
         let bytes = serialize(self)?;
 
@@ -92,9 +89,7 @@ impl Payload {
         let (size, _) = socket.recv_from(&mut buf)?;
         let payload: Payload = bincode::deserialize(&buf[..size])?;
 
-        if DEBUG_VERBOSE {
-            println!("Received {}", payload);
-        }
+        trace!("Received {}", payload);
 
         Ok(payload)
     }
