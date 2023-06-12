@@ -6,8 +6,8 @@ extern crate slog;
 extern crate slog_scope;
 extern crate slog_term;
 
-use clap::{Parser, ValueEnum};
-use kvs::Result;
+use clap::Parser;
+use kvs::{Engine, KvsServer, Result};
 use slog::Drain;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::process::exit;
@@ -27,21 +27,21 @@ struct Cli {
     engine: Engine,
 }
 
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Debug, Ord, ValueEnum)]
-#[allow(non_camel_case_types)]
-enum Engine {
-    kvs,
-    sled,
-}
-
 fn run() -> Result<()> {
     let cli = Cli::parse();
-    info!("{:?}", cli);
+    info!("Running kvs-server {}", env!("CARGO_PKG_VERSION"));
+    info!("------------------------");
+    info!("Database engine: {:?}", cli.engine);
+    info!("Listening address {}", cli.addr);
+
+    let mut server = KvsServer::new(cli.engine, cli.addr)?;
+    server.listen()?;
+
     Ok(())
 }
 
 fn main() {
-    let plain = slog_term::PlainSyncDecorator::new(std::io::stdout());
+    let plain = slog_term::PlainSyncDecorator::new(std::io::stderr());
     let log = slog::Logger::root(slog_term::FullFormat::new(plain).build().fuse(), slog_o!());
 
     let _guard = slog_scope::set_global_logger(log);

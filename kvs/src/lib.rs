@@ -3,9 +3,14 @@
 
 //! A simple key/value store library.
 
-pub use engines::{KvStore, KvsEngine};
+pub use client::KvsClient;
+pub use engines::{Engine, KvStore, KvsEngine};
 pub use error::{ErrorKind, Result};
+pub use server::KvsServer;
 
+mod client;
 mod engines;
 mod error;
 mod log;
+mod requests;
+mod server;

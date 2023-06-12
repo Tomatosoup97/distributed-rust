@@ -7,7 +7,7 @@ extern crate slog_scope;
 extern crate slog_term;
 
 use clap::{Parser, Subcommand};
-use kvs::Result;
+use kvs::{KvsClient, Result};
 use slog::Drain;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::process::exit;
@@ -24,6 +24,10 @@ struct Cli {
 
 #[derive(Subcommand, Debug)]
 enum Command {
+    Ping {
+        #[arg(long, value_name = "ADDR", default_value_t=DEFAULT_LISTENING_ADDRESS)]
+        addr: SocketAddr,
+    },
     Get {
         key: String,
         #[arg(long, value_name = "ADDR", default_value_t=DEFAULT_LISTENING_ADDRESS)]
@@ -44,7 +48,26 @@ enum Command {
 
 fn run() -> Result<()> {
     let cli = Cli::parse();
-    info!("{:?}", cli);
+    info!("Running kvs-client {}", env!("CARGO_PKG_VERSION"));
+    info!("------------------------");
+    info!("Config: {:?}", cli);
+
+    match cli.command {
+        Command::Ping { addr } => {
+            let mut client = KvsClient::connect(addr)?;
+            client.ping()?;
+        }
+        Command::Get { key, addr } => {
+            let client = KvsClient::connect(addr)?;
+        }
+        Command::Set { key, value, addr } => {
+            let client = KvsClient::connect(addr)?;
+        }
+        Command::Rm { key, addr } => {
+            let client = KvsClient::connect(addr)?;
+        }
+    }
+
     Ok(())
 }
 

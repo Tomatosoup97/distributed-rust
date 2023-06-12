@@ -1,9 +1,20 @@
 use crate::error::Result;
+use clap::ValueEnum;
 
 mod kvs;
 mod sled;
 pub use self::kvs::KvStore;
 pub use self::sled::SledKvsEngine;
+
+/// The engine of the key/value store.
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Debug, Ord, ValueEnum)]
+#[allow(non_camel_case_types)]
+pub enum Engine {
+    /// Key-Value Store database engine
+    kvs,
+    /// Sled embedded database engine
+    sled,
+}
 
 /// Storage interface for key-value store.
 pub trait KvsEngine {
