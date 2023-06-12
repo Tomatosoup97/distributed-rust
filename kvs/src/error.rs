@@ -14,6 +14,8 @@ pub enum ErrorKind {
     ConversionError(String),
     /// Key not found when removing
     KeyNotFound,
+    /// Database engine error
+    DatabaseEngine(sled::Error),
 }
 
 impl Display for ErrorKind {
@@ -23,6 +25,7 @@ impl Display for ErrorKind {
             ErrorKind::Serialization(ref err) => err.fmt(f),
             ErrorKind::ConversionError(str) => write!(f, "ConversionError: {}", str),
             ErrorKind::KeyNotFound => write!(f, "Key not found"),
+            ErrorKind::DatabaseEngine(ref err) => err.fmt(f),
         }
     }
 }
@@ -32,6 +35,7 @@ impl Error for ErrorKind {
         match self {
             ErrorKind::Io(ref err) => Some(err),
             ErrorKind::Serialization(ref err) => Some(err),
+            ErrorKind::DatabaseEngine(ref err) => Some(err),
             _ => None,
         }
     }
@@ -46,6 +50,18 @@ impl From<std::io::Error> for ErrorKind {
 impl From<serde_json::Error> for ErrorKind {
     fn from(err: serde_json::Error) -> Self {
         ErrorKind::Serialization(err)
+    }
+}
+
+impl From<sled::Error> for ErrorKind {
+    fn from(err: sled::Error) -> Self {
+        ErrorKind::DatabaseEngine(err)
+    }
+}
+
+impl From<std::string::FromUtf8Error> for ErrorKind {
+    fn from(err: std::string::FromUtf8Error) -> Self {
+        ErrorKind::ConversionError(err.to_string())
     }
 }
 

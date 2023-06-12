@@ -20,16 +20,26 @@ const DEFAULT_LISTENING_ADDRESS: SocketAddr =
 struct Cli {
     #[command(subcommand)]
     command: Command,
-    /// Address to connect to
-    #[arg(long, value_name = "ADDR", default_value_t=DEFAULT_LISTENING_ADDRESS)]
-    addr: SocketAddr,
 }
 
 #[derive(Subcommand, Debug)]
 enum Command {
-    Get { key: String },
-    Set { key: String, value: String },
-    Rm { key: String },
+    Get {
+        key: String,
+        #[arg(long, value_name = "ADDR", default_value_t=DEFAULT_LISTENING_ADDRESS)]
+        addr: SocketAddr,
+    },
+    Set {
+        key: String,
+        value: String,
+        #[arg(long, value_name = "ADDR", default_value_t=DEFAULT_LISTENING_ADDRESS)]
+        addr: SocketAddr,
+    },
+    Rm {
+        key: String,
+        #[arg(long, value_name = "ADDR", default_value_t=DEFAULT_LISTENING_ADDRESS)]
+        addr: SocketAddr,
+    },
 }
 
 fn run() -> Result<()> {

@@ -1,7 +1,9 @@
 use crate::error::Result;
 
 mod kvs;
+mod sled;
 pub use self::kvs::KvStore;
+pub use self::sled::SledKvsEngine;
 
 /// Storage interface for key-value store.
 pub trait KvsEngine {
