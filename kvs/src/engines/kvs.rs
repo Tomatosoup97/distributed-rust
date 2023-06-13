@@ -1,4 +1,4 @@
-use super::KvsEngine;
+use super::{Engine, KvsEngine};
 use crate::error::{ErrorKind, Result};
 use crate::log::LogEntry;
 use serde_json::Deserializer;
@@ -89,6 +89,10 @@ impl KvsEngine for KvStore {
             self.compact()?;
         }
         Ok(())
+    }
+
+    fn as_type(&self) -> Engine {
+        Engine::kvs
     }
 }
 

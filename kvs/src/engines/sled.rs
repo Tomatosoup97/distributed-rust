@@ -1,4 +1,4 @@
-use super::KvsEngine;
+use super::{Engine, KvsEngine};
 use crate::error::{ErrorKind, Result};
 
 /// Sled engine wrapper
@@ -33,5 +33,9 @@ impl KvsEngine for SledKvsEngine {
         self.db.remove(key)?.ok_or(ErrorKind::KeyNotFound)?;
         self.db.flush()?;
         Ok(())
+    }
+
+    fn as_type(&self) -> Engine {
+        Engine::sled
     }
 }

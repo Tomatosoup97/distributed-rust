@@ -16,6 +16,8 @@ pub enum ErrorKind {
     KeyNotFound,
     /// Database engine error
     DatabaseEngine(sled::Error),
+    /// Wrong engine used error
+    WrongEngineUsed,
 }
 
 impl Display for ErrorKind {
@@ -26,6 +28,7 @@ impl Display for ErrorKind {
             ErrorKind::ConversionError(str) => write!(f, "ConversionError: {}", str),
             ErrorKind::KeyNotFound => write!(f, "Key not found"),
             ErrorKind::DatabaseEngine(ref err) => err.fmt(f),
+            ErrorKind::WrongEngineUsed => write!(f, "Wrong engine used!"),
         }
     }
 }

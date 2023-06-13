@@ -29,4 +29,7 @@ pub trait KvsEngine {
     /// Removes a given string key.
     /// Returns an error if the key does not exit or value is not read successfully.
     fn remove(&mut self, key: String) -> Result<()>;
+
+    /// As Engine type
+    fn as_type(&self) -> Engine;
 }
