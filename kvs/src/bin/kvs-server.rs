@@ -7,7 +7,7 @@ extern crate slog_scope;
 extern crate slog_term;
 
 use clap::Parser;
-use kvs::{Engine, KvsServer, Result};
+use kvs::{Engine, KvStore, KvsEngine, KvsServer, Result, SledKvsEngine};
 use slog::Drain;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::process::exit;
@@ -27,17 +27,25 @@ struct Cli {
     engine: Engine,
 }
 
+fn run_on_engine<E: KvsEngine>(engine: E, addr: SocketAddr) -> Result<()> {
+    let mut server = KvsServer::new(engine, addr)?;
+    server.listen()?;
+
+    Ok(())
+}
+
 fn run() -> Result<()> {
     let cli = Cli::parse();
+
     info!("Running kvs-server {}", env!("CARGO_PKG_VERSION"));
     info!("------------------------");
     info!("Database engine: {:?}", cli.engine);
     info!("Listening address {}", cli.addr);
 
-    let mut server = KvsServer::new(cli.engine, cli.addr)?;
-    server.listen()?;
-
-    Ok(())
+    match cli.engine {
+        Engine::kvs => run_on_engine(KvStore::open(".")?, cli.addr),
+        Engine::sled => run_on_engine(SledKvsEngine::new(sled::open(".")?), cli.addr),
+    }
 }
 
 fn main() {

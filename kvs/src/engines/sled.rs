@@ -1,8 +1,16 @@
 use super::KvsEngine;
-use crate::error::Result;
+use crate::error::{ErrorKind, Result};
 
+/// Sled engine wrapper
 pub struct SledKvsEngine {
     db: sled::Db,
+}
+
+impl SledKvsEngine {
+    /// Create a new SledKvsEngine
+    pub fn new(db: sled::Db) -> Self {
+        SledKvsEngine { db }
+    }
 }
 
 impl KvsEngine for SledKvsEngine {
@@ -22,7 +30,7 @@ impl KvsEngine for SledKvsEngine {
     }
 
     fn remove(&mut self, key: String) -> Result<()> {
-        self.db.remove(key)?;
+        self.db.remove(key)?.ok_or(ErrorKind::KeyNotFound)?;
         self.db.flush()?;
         Ok(())
     }

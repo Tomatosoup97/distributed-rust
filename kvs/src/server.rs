@@ -1,4 +1,4 @@
-use crate::engines::{Engine, KvStore, KvsEngine};
+use crate::engines::KvsEngine;
 use crate::error::Result;
 use crate::requests::{Request, Response};
 use serde_json::Deserializer;
@@ -9,20 +9,15 @@ use std::net::SocketAddr;
 use std::net::{TcpListener, TcpStream};
 
 /// The server of the key/value store.
-pub struct KvsServer {
-    engine: KvStore,
+pub struct KvsServer<E: KvsEngine> {
+    engine: E,
     addr: SocketAddr,
 }
 
-impl KvsServer {
+impl<E: KvsEngine> KvsServer<E> {
     /// Create a `KvsServer` with a given storage engine and socket address.
-    pub fn new(engine: Engine, addr: SocketAddr) -> Result<Self> {
-        let kv_store = KvStore::open(".")?;
-
-        Ok(KvsServer {
-            engine: kv_store,
-            addr,
-        })
+    pub fn new(engine: E, addr: SocketAddr) -> Result<Self> {
+        Ok(KvsServer { engine, addr })
     }
 
     /// Listen to the given socket address.

@@ -4,7 +4,7 @@
 //! A simple key/value store library.
 
 pub use client::KvsClient;
-pub use engines::{Engine, KvStore, KvsEngine};
+pub use engines::{Engine, KvStore, KvsEngine, SledKvsEngine};
 pub use error::{ErrorKind, Result};
 pub use server::KvsServer;
 
