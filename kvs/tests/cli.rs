@@ -173,6 +173,7 @@ fn cli_log_configuration() {
 
 #[test]
 fn cli_wrong_engine() {
+    todo!();
     // sled first, kvs second
     {
         let temp_dir = TempDir::new().unwrap();
