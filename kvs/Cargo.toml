@@ -26,6 +26,9 @@ rand = "0.6.5"
 tempfile = "3.0.7"
 walkdir = "2.2.7"
 
+[[bench]]
+name = "engines"
+harness = false
 
 [lib]
 test = false
