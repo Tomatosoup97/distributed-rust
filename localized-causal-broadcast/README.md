@@ -12,4 +12,4 @@ UDP sockets.
 - Localized Causal Broadcast
 
 Implemented as a Distributed Algorithms project at EPFL. Full description and usage
-guide is available in (./ProjectDescription.md)[ProjectDescription.md].
+guide is available in [ProjectDescription.md](./ProjectDescription.md).

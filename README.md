@@ -1,4 +1,4 @@
 # Distributed algorithms in Rust
 
-- (./kvs)[Key-value store}
-- (./localized-causal-broadcast)[Localized causal broadcast]
+- [Key-value store](./kvs)
+- [Localized causal broadcast](./localized-causal-broadcast)
